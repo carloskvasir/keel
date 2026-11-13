@@ -1,0 +1,78 @@
+static_resources:
+  listeners:
+    - name: egress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 3128 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: egress
+                http_protocol_options: { accept_http_10: true }
+                upgrade_configs:
+                  - upgrade_type: CONNECT
+                # Telemetria invertida: todo acesso (permitido ou bloqueado) vira
+                # uma linha JSON em stdout, pronta para um coletor de APM.
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        json_format:
+                          ts: "%START_TIME%"
+                          method: "%REQ(:METHOD)%"
+                          authority: "%REQ(:AUTHORITY)%"
+                          status: "%RESPONSE_CODE%"
+                          flags: "%RESPONSE_FLAGS%"
+                          tx_bytes: "%BYTES_RECEIVED%"
+                          rx_bytes: "%BYTES_SENT%"
+                          upstream: "%UPSTREAM_HOST%"
+                          decision: "%RESPONSE_CODE_DETAILS%"
+                route_config:
+                  name: egress
+                  virtual_hosts:
+                    # ---- ALLOW: só o que está em allowlist.yaml ----
+                    - name: allowed
+                      domains: [__ALLOWED_DOMAINS__]
+                      routes:
+                        - match: { connect_matcher: {} }
+                          route:
+                            cluster: dfp
+                            upgrade_configs:
+                              - upgrade_type: CONNECT
+                                connect_config: {}
+                        - match: { prefix: "/" }
+                          route: { cluster: dfp, timeout: 0s }
+                    # ---- DEFAULT DENY ----
+                    - name: deny
+                      domains: ["*"]
+                      routes:
+                        - match: { connect_matcher: {} }
+                          direct_response:
+                            status: 403
+                            body: { inline_string: "blocked by keel (default deny)\n" }
+                        - match: { prefix: "/" }
+                          direct_response:
+                            status: 403
+                            body: { inline_string: "blocked by keel (default deny)\n" }
+                http_filters:
+                  - name: envoy.filters.http.dynamic_forward_proxy
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                      dns_cache_config:
+                        name: keel_dns
+                        dns_lookup_family: V4_ONLY
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: dfp
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: keel_dns
+            dns_lookup_family: V4_ONLY

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# keel-exec: injeta credenciais Just-In-Time apenas no processo de UM comando.
+#
+#   keel-exec ANTHROPIC_API_KEY -- claude
+#   keel-exec FOO BAR -- ruby script.rb
+#
+# O valor de cada VAR vem do ambiente do HOST (ou de um comando, se existir
+# KEEL_SECRET_<VAR>_CMD, ex.: KEEL_SECRET_ANTHROPIC_API_KEY_CMD='op read op://...').
+# O valor nunca é escrito em disco nem gravado na definição do container: é
+# passado por `exec -e` e vive só no ambiente desse processo.
+set -euo pipefail
+
+vars=()
+while [[ $# -gt 0 && "$1" != "--" ]]; do vars+=("$1"); shift; done
+[[ "${1:-}" == "--" ]] || { echo "uso: keel-exec VAR... -- comando [args]" >&2; exit 2; }
+shift
+[[ $# -gt 0 ]] || { echo "faltou o comando" >&2; exit 2; }
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+compose=(docker compose -f "$here/docker-compose.yml")
+args=()
+for v in "${vars[@]}"; do
+  cmd_var="KEEL_SECRET_${v}_CMD"
+  if [[ -n "${!cmd_var:-}" ]]; then
+    export "$v=$(bash -c "${!cmd_var}")"
+  fi
+  [[ -n "${!v:-}" ]] || { echo "keel-exec: $v não definido no host" >&2; exit 1; }
+  args+=(-e "$v")
+done
+
+exec "${compose[@]}" exec "${args[@]}" dev "$@"

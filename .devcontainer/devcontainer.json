@@ -1,0 +1,21 @@
+{
+  "name": "Keel (Bulkhead) - Ruby + Node + agente isolado",
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "dev",
+  "runServices": ["dev", "envoy"],
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+  // Nada de features que instalam credenciais (gh, sshd). O agente só enxerga o workspace.
+  "features": {},
+  "remoteEnv": {
+    // Não herdar o agente SSH do host (verificar também a setting
+    // "dev.containers.copyGitConfig": false no VS Code do usuário).
+    "SSH_AUTH_SOCK": ""
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["shopify.ruby-lsp"]
+    }
+  }
+}

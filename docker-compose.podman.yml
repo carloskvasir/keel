@@ -1,0 +1,7 @@
+# Override para Podman rootless: sem isso o UID do dono do projeto no host vira
+# `root` dentro do contêiner e o agente (usuário `vscode`) não consegue gravar no
+# workspace. `keep-id` mantém o mesmo UID dentro e fora.
+#   docker compose -f docker-compose.yml -f docker-compose.podman.yml up -d
+services:
+  dev:
+    userns_mode: "keep-id"

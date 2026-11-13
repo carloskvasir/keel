@@ -1,0 +1,59 @@
+# Keel -- instância do padrão Bulkhead.
+#
+#   sealed : rede interna (internal: true). NÃO tem gateway: o container `dev`
+#            (onde o agente roda) não consegue abrir nenhuma conexão para fora.
+#   egress : rede com saída. Só o Envoy está nela.
+#
+# O único caminho do agente para o mundo é: dev -> envoy:3128 -> allowlist.yaml.
+name: keel
+
+services:
+  envoy:
+    image: docker.io/envoyproxy/envoy:v1.32-latest
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    volumes:
+      - ./envoy/entrypoint.sh:/entrypoint.sh:ro
+      - ./envoy/envoy.yaml.tmpl:/etc/envoy/envoy.yaml.tmpl:ro
+      - ${KEEL_ALLOWLIST:-./allowlist.yaml}:/etc/envoy/allowlist.yaml:ro
+    networks:
+      sealed:
+        ipv4_address: 172.29.99.2
+      egress: {}
+    restart: unless-stopped
+
+  dev:
+    build: .devcontainer
+    command: sleep infinity
+    init: true
+    working_dir: /workspace
+    volumes:
+      # Workspace do projeto. Por padrão é ./workspace, e NUNCA a raiz do Keel: os
+      # arquivos de controle (allowlist.yaml, docker-compose.yml, .devcontainer,
+      # envoy/, bin/) ficam fora do alcance de escrita do agente.
+      - ${KEEL_WORKSPACE:-./workspace}:/workspace
+      # Credential Blindness (arquivo): .env vira um arquivo vazio.
+      - /dev/null:/workspace/.env
+    environment:
+      HTTP_PROXY: http://172.29.99.2:3128
+      HTTPS_PROXY: http://172.29.99.2:3128
+      http_proxy: http://172.29.99.2:3128
+      https_proxy: http://172.29.99.2:3128
+      NO_PROXY: ""
+      no_proxy: ""
+    # Sem resolvedor útil: o agente não resolve nomes sozinho (fecha DNS tunneling).
+    # O Envoy resolve os nomes permitidos por ele.
+    dns: [127.0.0.1]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks:
+      sealed:
+        ipv4_address: 172.29.99.10
+    depends_on: [envoy]
+
+networks:
+  sealed:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.99.0/24
+  egress: {}

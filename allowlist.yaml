@@ -1,0 +1,9 @@
+# Allowlist de saída do agente (Default Deny: o que não está aqui é bloqueado).
+# Formato: uma entrada por linha, "- host" (portas 80 e 443) ou "- host:porta".
+# Depois de editar:  docker compose restart envoy
+allow:
+  - api.anthropic.com
+  - rubygems.org
+  - index.rubygems.org
+  - registry.npmjs.org
+  - github.com
